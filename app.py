@@ -21,7 +21,7 @@ db_config = {
     "host": "localhost",
     "user": "pi",
     "password": "pi",
-    "database": "pigrow"
+    "database": "autogrow"
 }
 
 # Threshold values for when to turn the pumps on
@@ -37,31 +37,34 @@ def read_sensor_data(sensor_id):
     global manual_overrides, current_modes
     while True:
         try:
-            raw_value = sensors[sensor_id].read_raw_value()
-            voltage_value = sensors[sensor_id].read_voltage()
+            if sensors[sensor_id].is_connected():
+                raw_value = sensors[sensor_id].read_raw_value()
+                voltage_value = sensors[sensor_id].read_voltage()
 
-            # Save data into MariaDB immediately for real-time access
-            conn = mysql.connector.connect(**db_config)
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT INTO soil (sensor_id, raw_data, voltage) VALUES (%s, %s, %s)",
-                (sensor_id, raw_value, voltage_value)
-            )
-            conn.commit()
-            cursor.close()
-            conn.close()
+                # Save data into MariaDB immediately for real-time access
+                conn = mysql.connector.connect(**db_config)
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT INTO soil (sensor_id, raw_data, voltage) VALUES (%s, %s, %s)",
+                    (sensor_id, raw_value, voltage_value)
+                )
+                conn.commit()
+                cursor.close()
+                conn.close()
 
-            print(f"Sensor {sensor_id} - Raw Data: {raw_value}, Voltage: {voltage_value}")
+                print(f"Sensor {sensor_id} - Raw Data: {raw_value}, Voltage: {voltage_value}")
 
-            if not manual_overrides[sensor_id]:
-                # Check if the voltage is above the threshold to control the pump
-                if voltage_value > threshold_voltages[sensor_id]:
-                    pumps[sensor_id].turn_on()
-                    print(f"Pump {sensor_id} ON - Soil moisture low")
-                else:
-                    pumps[sensor_id].turn_off()
-                    print(f"Pump {sensor_id} OFF - Soil moisture sufficient")
+                if not manual_overrides[sensor_id]:
+                    # Check if the voltage is above the threshold to control the pump
+                    if voltage_value > threshold_voltages[sensor_id]:
+                        pumps[sensor_id].turn_on()
+                        print(f"Pump {sensor_id} ON - Soil moisture low")
+                    else:
+                        pumps[sensor_id].turn_off()
+                        print(f"Pump {sensor_id} OFF - Soil moisture sufficient")
 
+            else:
+                print(f"Sensor {sensor_id} is not connected.")
             time.sleep(1)  # Additional delay before the next loop iteration
 
         except OSError as os_err:
