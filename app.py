@@ -27,7 +27,7 @@ db_config = {
     "host": "localhost",
     "user": "pi",
     "password": "pi",
-    "database": "autogrow"
+    "database": "pigrow"  # Changed from "autogrow" to "pigrow"
 }
 
 # Threshold values for when to turn the pumps on
