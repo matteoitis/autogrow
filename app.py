@@ -2,12 +2,13 @@ from flask import Flask, render_template, request, redirect, url_for, jsonify
 import mysql.connector
 import board
 import busio
+import adafruit_ads1x15.ads1115 as ADS
+from adafruit_ads1x15.analog_in import AnalogIn
+import RPi.GPIO as GPIO
 import threading
 import time
 from sensor import Sensor
 from pump import Pump
-from adafruit_ads1x15.analog_in import AnalogIn
-from adafruit_ads1x15.ads1115 import ADS
 
 app = Flask(__name__)
 
@@ -15,7 +16,7 @@ app = Flask(__name__)
 i2c = busio.I2C(board.SCL, board.SDA)
 
 # Initialize the ADS1115 ADC
-ads = ADS(i2c)
+ads = ADS.ADS1115(i2c)
 
 # Initialize sensors and pumps
 sensors = [Sensor(ads, ADS.P0), Sensor(ads, ADS.P1), Sensor(ads, ADS.P2), Sensor(ads, ADS.P3)]
