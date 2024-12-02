@@ -6,14 +6,19 @@ import threading
 import time
 from sensor import Sensor
 from pump import Pump
+from adafruit_ads1x15.analog_in import AnalogIn
+from adafruit_ads1x15.ads1115 import ADS
 
 app = Flask(__name__)
 
 # Initialize the I2C interface
 i2c = busio.I2C(board.SCL, board.SDA)
 
+# Initialize the ADS1115 ADC
+ads = ADS(i2c)
+
 # Initialize sensors and pumps
-sensors = [Sensor(i2c, ADS.P0), Sensor(i2c, ADS.P1), Sensor(i2c, ADS.P2), Sensor(i2c, ADS.P3)]
+sensors = [Sensor(ads, ADS.P0), Sensor(ads, ADS.P1), Sensor(ads, ADS.P2), Sensor(ads, ADS.P3)]
 pumps = [Pump(26), Pump(19), Pump(13), Pump(6)]  # GPIO pins for pumps
 
 # MariaDB connection details
@@ -57,10 +62,10 @@ def read_sensor_data(sensor_id):
                 if not manual_overrides[sensor_id]:
                     # Check if the voltage is above the threshold to control the pump
                     if voltage_value > threshold_voltages[sensor_id]:
-                        pumps[sensor_id].turn_on()
+                        pumps[sensor_id].on()
                         print(f"Pump {sensor_id} ON - Soil moisture low")
                     else:
-                        pumps[sensor_id].turn_off()
+                        pumps[sensor_id].off()
                         print(f"Pump {sensor_id} OFF - Soil moisture sufficient")
 
             else:
@@ -107,11 +112,11 @@ def control():
     if action == 'on':
         manual_overrides[sensor_id] = True
         current_modes[sensor_id] = "manual"
-        pumps[sensor_id].turn_on()
+        pumps[sensor_id].on()
     elif action == 'off':
         manual_overrides[sensor_id] = True
         current_modes[sensor_id] = "manual"
-        pumps[sensor_id].turn_off()
+        pumps[sensor_id].off()
     elif action == 'auto':
         manual_overrides[sensor_id] = False
         current_modes[sensor_id] = "auto"
@@ -144,4 +149,3 @@ def data():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
-    
