@@ -7,117 +7,91 @@ from adafruit_ads1x15.analog_in import AnalogIn
 import RPi.GPIO as GPIO
 import threading
 import time
-from sensor import Sensor
-from pump import Pump
 
 app = Flask(__name__)
 
-# Initialize the I2C interface
+# Initialize I2C and ADS1115
 i2c = busio.I2C(board.SCL, board.SDA)
-
-# Initialize the ADS1115 ADC
 ads = ADS.ADS1115(i2c)
 
-# Initialize sensors and pumps
-sensors = [Sensor(ads, ADS.P0), Sensor(ads, ADS.P1), Sensor(ads, ADS.P2), Sensor(ads, ADS.P3)]
-pumps = [Pump(26), Pump(19), Pump(13), Pump(6)]  # GPIO pins for pumps
+# Define sensors and pumps
+sensors = [AnalogIn(ads, ADS.P0), AnalogIn(ads, ADS.P1), AnalogIn(ads, ADS.P2), AnalogIn(ads, ADS.P3)]
+pump_pins = [26, 19, 13, 6]
+GPIO.setmode(GPIO.BCM)
+for pin in pump_pins:
+    GPIO.setup(pin, GPIO.OUT)
+    GPIO.output(pin, GPIO.HIGH)
 
-# MariaDB connection details
+# Database config
 db_config = {
     "host": "localhost",
     "user": "pi",
     "password": "pi",
-    "database": "pigrow"  # Changed from "autogrow" to "pigrow"
+    "database": "pigrow"
 }
 
-# Threshold values for when to turn the pumps on
-threshold_voltages = [1.5, 1.5, 1.5, 1.5]
-
-# Manual override flags
-manual_overrides = [False, False, False, False]
-
-# Current modes (auto or manual)
-current_modes = ["auto", "auto", "auto", "auto"]
+# Thresholds, overrides, and modes
+threshold_voltages = [1.5] * 4
+manual_overrides = [False] * 4
+current_modes = ["auto"] * 4
 
 def read_sensor_data(sensor_id):
-    global manual_overrides, current_modes
     while True:
         try:
-            if sensors[sensor_id].sensor_channel is not None:
-                raw_value = sensors[sensor_id].read_raw_value()
-                voltage_value = sensors[sensor_id].read_voltage()
-
-                # Save data into MariaDB immediately for real-time access
-                conn = mysql.connector.connect(**db_config)
+            raw_data = sensors[sensor_id].value
+            voltage = sensors[sensor_id].voltage
+            with mysql.connector.connect(**db_config) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "INSERT INTO soil (sensor_id, raw_data, voltage) VALUES (%s, %s, %s)",
-                    (sensor_id, raw_value, voltage_value)
+                    (sensor_id, raw_data, voltage)
                 )
                 conn.commit()
-                cursor.close()
-                conn.close()
 
-                print(f"Sensor {sensor_id} - Raw Data: {raw_value}, Voltage: {voltage_value}")
-
-                if not manual_overrides[sensor_id]:
-                    # Check if the voltage is above the threshold to control the pump
-                    if voltage_value > threshold_voltages[sensor_id]:
-                        pumps[sensor_id].on()
-                        print(f"Pump {sensor_id} ON - Soil moisture low")
-                    else:
-                        pumps[sensor_id].off()
-                        print(f"Pump {sensor_id} OFF - Soil moisture sufficient")
-
-            else:
-                print(f"Sensor {sensor_id} is not connected.")
-            time.sleep(1)  # Additional delay before the next loop iteration
-
-        except OSError as os_err:
-            print(f"OS Error: {os_err}")
-        except mysql.connector.Error as db_err:
-            print(f"Database Error: {db_err}")
+            if not manual_overrides[sensor_id] and current_modes[sensor_id] == "auto":
+                if voltage < threshold_voltages[sensor_id]:
+                    GPIO.output(pump_pins[sensor_id], GPIO.LOW)
+                else:
+                    GPIO.output(pump_pins[sensor_id], GPIO.HIGH)
+            time.sleep(1)
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"Sensor {sensor_id} error: {e}")
 
-# Start the sensor reading in separate threads
+# Start threads for each sensor
 for i in range(4):
-    sensor_thread = threading.Thread(target=read_sensor_data, args=(i,))
-    sensor_thread.daemon = True
-    sensor_thread.start()
+    threading.Thread(target=read_sensor_data, args=(i,), daemon=True).start()
 
 @app.route('/')
 def index():
-    try:
-        # Connect to the database and fetch the latest data for each sensor
-        conn = mysql.connector.connect(**db_config)
+    with mysql.connector.connect(**db_config) as conn:
         cursor = conn.cursor(dictionary=True)
         latest_data = []
         for sensor_id in range(4):
-            cursor.execute("SELECT raw_data, voltage FROM soil WHERE sensor_id = %s ORDER BY id DESC LIMIT 1", (sensor_id,))
-            latest_data.append(cursor.fetchone())
-        cursor.close()
-        conn.close()
-
-        return render_template('page.html', latest_data=latest_data, threshold_voltages=threshold_voltages, current_modes=current_modes, manual_overrides=manual_overrides)
-    except mysql.connector.Error as db_err:
-        return f"Database Error: {db_err}"
-    except Exception as e:
-        return f"Error: {e}"
+            cursor.execute(
+                "SELECT raw_data, voltage FROM soil WHERE sensor_id = %s ORDER BY id DESC LIMIT 1",
+                (sensor_id,)
+            )
+            latest_data.append(cursor.fetchone() or {"raw_data": "N/A", "voltage": "N/A"})
+    return render_template(
+        'page.html',
+        latest_data=latest_data,
+        threshold_voltages=threshold_voltages,
+        current_modes=current_modes,
+        manual_overrides=manual_overrides
+    )
 
 @app.route('/control', methods=['POST'])
 def control():
-    global manual_overrides, current_modes
-    sensor_id = int(request.form.get('sensor_id'))
-    action = request.form.get('action')
+    sensor_id = int(request.form['sensor_id'])
+    action = request.form['action']
     if action == 'on':
         manual_overrides[sensor_id] = True
         current_modes[sensor_id] = "manual"
-        pumps[sensor_id].on()
+        GPIO.output(pump_pins[sensor_id], GPIO.LOW)
     elif action == 'off':
         manual_overrides[sensor_id] = True
         current_modes[sensor_id] = "manual"
-        pumps[sensor_id].off()
+        GPIO.output(pump_pins[sensor_id], GPIO.HIGH)
     elif action == 'auto':
         manual_overrides[sensor_id] = False
         current_modes[sensor_id] = "auto"
@@ -125,28 +99,22 @@ def control():
 
 @app.route('/set_threshold', methods=['POST'])
 def set_threshold():
-    global threshold_voltages
-    sensor_id = int(request.form.get('sensor_id'))
-    threshold_voltages[sensor_id] = float(request.form.get('threshold'))
+    sensor_id = int(request.form['sensor_id'])
+    threshold_voltages[sensor_id] = float(request.form['threshold'])
     return redirect(url_for('index'))
 
 @app.route('/data')
 def data():
-    try:
-        conn = mysql.connector.connect(**db_config)
+    with mysql.connector.connect(**db_config) as conn:
         cursor = conn.cursor(dictionary=True)
         data = []
         for sensor_id in range(4):
-            cursor.execute("SELECT raw_data, voltage FROM soil WHERE sensor_id = %s ORDER BY id DESC LIMIT 1", (sensor_id,))
-            data.append(cursor.fetchone())
-        cursor.close()
-        conn.close()
-
-        return {"data": data}
-    except mysql.connector.Error as db_err:
-        return {"error": f"Database Error: {db_err}"}, 500
-    except Exception as e:
-        return {"error": f"Error: {e}"}, 500
+            cursor.execute(
+                "SELECT raw_data, voltage FROM soil WHERE sensor_id = %s ORDER BY id DESC LIMIT 1",
+                (sensor_id,)
+            )
+            data.append(cursor.fetchone() or {"raw_data": "N/A", "voltage": "N/A"})
+    return jsonify(data)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
