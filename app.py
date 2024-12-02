@@ -63,8 +63,10 @@ class Sensor:
         if not self.manual_override and self.current_mode == "auto":
             if voltage < self.threshold_voltage:
                 GPIO.output(self.pump_pin, GPIO.LOW)
+                logging.info(f"Sensor {self.sensor_id} ({self.name}) - Pump ON")
             else:
                 GPIO.output(self.pump_pin, GPIO.HIGH)
+                logging.info(f"Sensor {self.sensor_id} ({self.name}) - Pump OFF")
 
 # Initialize I2C and ADS1115
 i2c = busio.I2C(board.SCL, board.SDA)
@@ -135,24 +137,6 @@ def data():
             )
             data.append(cursor.fetchone() or {"raw_data": "N/A", "voltage": "N/A"})
     return jsonify(data)
-
-@app.route('/restart_program', methods=['POST'])
-def restart_program():
-    try:
-        os.execv(__file__, ["python3"] + os.sys.argv)
-    except Exception as e:
-        logging.error(f"Restart program error: {e}")
-        return "Restart program failed", 500
-
-@app.route('/restart_sensors', methods=['POST'])
-def restart_sensors():
-    try:
-        for sensor in sensors:
-            sensor.start_reading()
-        return redirect(url_for('index'))
-    except Exception as e:
-        logging.error(f"Restart sensors error: {e}")
-        return "Restart sensors failed", 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
