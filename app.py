@@ -43,7 +43,7 @@ def read_sensor_data(sensor_id):
     global manual_overrides, current_modes
     while True:
         try:
-            if sensors[sensor_id].is_connected():
+            if sensors[sensor_id].sensor_channel is not None:
                 raw_value = sensors[sensor_id].read_raw_value()
                 voltage_value = sensors[sensor_id].read_voltage()
 
