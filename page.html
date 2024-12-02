@@ -26,12 +26,6 @@
 <body>
     <h1>Multi-Sensor Dashboard</h1>
 
-    <button onclick="document.getElementById('restartSensorsForm').submit();">Restart Sensors</button>
-    <button onclick="document.getElementById('restartProgramForm').submit();">Restart Program</button>
-
-    <form id="restartSensorsForm" method="post" action="/restart_sensors" style="display:none;"></form>
-    <form id="restartProgramForm" method="post" action="/restart_program" style="display:none;"></form>
-
     {% for sensor_id in range(4) %}
     <div>
         <h2 id="sensor_name_{{ sensor_id }}">Sensor {{ sensor_id + 1 }}</h2>
