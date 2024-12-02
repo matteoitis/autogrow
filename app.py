@@ -99,7 +99,7 @@ def index():
         cursor.close()
         conn.close()
 
-        return render_template('page.html', latest_data=latest_data, threshold_voltages=threshold_voltages, current_modes=current_modes)
+        return render_template('page.html', latest_data=latest_data, threshold_voltages=threshold_voltages, current_modes=current_modes, manual_overrides=manual_overrides)
     except mysql.connector.Error as db_err:
         return f"Database Error: {db_err}"
     except Exception as e:
